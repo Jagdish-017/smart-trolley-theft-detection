@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Trolley Dashboard</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --panel: #151f32;
+  --border: #29364c;
+  --muted: #9aabc2;
+  --blue: #60a5fa;
+  --green: #4ade80;
+  --red: #f87171;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: #f8fafc;
+  font-family: Arial, sans-serif;
+}
+main { max-width: 1000px; margin: auto; padding: 24px 16px; }
+header {
+  display: flex; justify-content: space-between;
+  align-items: center; flex-wrap: wrap; gap: 12px;
+  margin-bottom: 24px;
+}
+h1 { margin: 0; font-size: 25px; }
+.subtitle { color: var(--muted); margin-top: 7px; font-size: 14px; }
+.pill {
+  padding: 8px 12px; border-radius: 20px;
+  background: #183b2a; color: var(--green); font-size: 13px;
+}
+.grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px; margin-bottom: 18px;
+}
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px;
+}
+.label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.value { font-size: 27px; font-weight: bold; margin-top: 10px; }
+.section-title { font-size: 18px; margin: 0 0 16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 13px 5px; text-align: left;
+  border-bottom: 1px solid var(--border); font-size: 14px;
+}
+th { color: var(--muted); font-weight: normal; }
+td:last-child, th:last-child { text-align: right; }
+.total {
+  display: flex; justify-content: space-between;
+  padding-top: 18px; font-size: 19px; font-weight: bold;
+}
+.status { font-size: 17px; font-weight: bold; margin-top: 10px; }
+.good { color: var(--green); }
+.bad { color: var(--red); }
+.info { color: var(--blue); }
+.footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+@media(min-width:700px) {
+  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>SMART TROLLEY</h1>
+    <div class="subtitle">IoT Real-Time Billing & Theft Prevention</div>
+  </div>
+  <div class="pill" id="connection">Connecting...</div>
+</header>
+
+<div class="grid">
+  <section class="card">
+    <div class="label">Total Bill</div>
+    <div class="value" id="total">₹0</div>
+  </section>
+  <section class="card">
+    <div class="label">Items in Cart</div>
+    <div class="value" id="items">0</div>
+  </section>
+  <section class="card">
+    <div class="label">Billing Status</div>
+    <div class="status info" id="billing">Waiting</div>
+  </section>
+  <section class="card">
+    <div class="label">Security Status</div>
+    <div class="status good" id="security">Secure</div>
+    <div class="subtitle" id="pending">0 pending returns</div>
+  </section>
+</div>
+
+<section class="card">
+  <h2 class="section-title">Shopping Cart</h2>
+  <table>
+    <thead>
+      <tr><th>Product</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr>
+    </thead>
+    <tbody id="cart">
+      <tr><td colspan="4">Waiting for ESP32 data...</td></tr>
+    </tbody>
+  </table>
+  <div class="total"><span>Grand Total</span><span id="grandTotal">₹0</span></div>
+</section>
+
+<section class="card" style="margin-top:16px">
+  <div class="label">Removal Authorization</div>
+  <div class="status info" id="removal">Not authorized</div>
+  <div class="subtitle" id="updated">Waiting for first update</div>
+</section>
+
+<div class="footer">
+  Live data from your ESP32 · Updates automatically every second
+</div>
+</main>
+
+<script>
+const money = n => '₹' + Number(n).toLocaleString('en-IN');
+
+async function refreshDashboard() {
+  try {
+    const response = await fetch('/api', {cache: 'no-store'});
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const d = await response.json();
+
+    document.getElementById('connection').textContent = '● Connected';
+    document.getElementById('total').textContent = money(d.total);
+    document.getElementById('grandTotal').textContent = money(d.total);
+    document.getElementById('items').textContent = d.itemCount;
+
+    const billing = document.getElementById('billing');
+    billing.textContent = d.billingStarted ? 'Active' : 'Not active';
+    billing.className = 'status ' + (d.billingStarted ? 'good' : 'info');
+
+    const security = document.getElementById('security');
+    security.textContent = d.alert ? 'THEFT ALERT' : 'Secure';
+    security.className = 'status ' + (d.alert ? 'bad' : 'good');
+    document.getElementById('pending').textContent =
+      d.pending + ' pending return(s)';
+
+    const removal = document.getElementById('removal');
+    removal.textContent = d.removalAllowed ? 'Removal allowed' : 'Not authorized';
+    removal.className = 'status ' + (d.removalAllowed ? 'good' : 'info');
+
+    const cart = document.getElementById('cart');
+    cart.replaceChildren();
+
+    let hasItems = false;
+    d.products.forEach(p => {
+      if (p.qty <= 0) return;
+      hasItems = true;
+
+      const row = document.createElement('tr');
+      [p.name, p.qty, money(p.price), money(p.qty * p.price)]
+        .forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+      cart.appendChild(row);
+    });
+
+    if (!hasItems) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = 'No items in cart';
+      row.appendChild(cell);
+      cart.appendChild(row);
+    }
+
+    document.getElementById('updated').textContent =
+      'Last updated: ' + new Date().toLocaleTimeString();
+  } catch (error) {
+    document.getElementById('connection').textContent = '● Disconnected';
+    document.getElementById('connection').style.background = '#482326';
+    document.getElementById('connection').style.color = '#f87171';
+    document.getElementById('updated').textContent =
+      'Cannot reach ESP32. Checking again...';
+  }
+}
+
+refreshDashboard();
+setInterval(refreshDashboard, 1000);
+</script>
+</body>
+</html>
